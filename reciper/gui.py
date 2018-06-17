@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (QHBoxLayout, QVBoxLayout,
                              QDialog, QDialogButtonBox, QApplication, QListWidget)
 import matplotlib
 import numpy as np
+from scipy.optimize import linprog
 from fatsecret import Fatsecret
 
 
@@ -105,6 +106,16 @@ class AppWindow(QtWidgets.QMainWindow):
         if isinstance(serving, list):
             # serving = self.select_serving(serving)
             serving = serving[0]
+
+        # show the info about the ingredient
+        info = []
+        info.append(selected_food)
+        info.append('measurement unit: %s' % serving.get('measurement_description'))
+        for ck, cv in serving.items():
+            info.append('%s: %s' % (ck, cv))
+        info_list = SListWindow(info)
+        res = info_list.exec_()
+        print(res)
         self.ingredients[selected_food] = serving
         self.w_ingredient_list.addItem(selected_food)
 
@@ -128,7 +139,7 @@ class AppWindow(QtWidgets.QMainWindow):
         keys = []
         params = ['calories', 'carbohydrate', 'fat', 'fiber', 'sodium', 'protein', 'sugar']
         for ckey in params:
-            cdict = {'type': 'float', 'label': ckey, 'default': self.values.get(ckey, 0)}
+            cdict = {'type': 'string', 'label': ckey, 'default': str(self.values.get(ckey, 0))}
             keys.append(cdict)
             cdict = {'type': 'bool', 'label': 'use_%s' % ckey, 'default': True}
             keys.append(cdict)
@@ -150,6 +161,50 @@ class AppWindow(QtWidgets.QMainWindow):
 
     def get_recipe(self):
         logger.debug('recipe for %d values using %d ingredients' % (len(self.values), len(self.ingredients)))
+
+        # we have the variables:
+        # one per ingredient
+        # one per remainder parameter (normalized to 1)
+        # and we minimize the remaineder parameters
+
+        eq_coeff = []
+        eq_const = []
+        # ineq_coeff = []
+        # ineq_const = []
+        # # create the positivity inequalities (all ingredients >= 0)
+        # for idx, cingredient in enumerate(self.ingredients.values()):
+        #     cc = np.zeros(len(self.ingredients) + len(self.parameters))
+        #     cc[idx] = 1
+        #     ineq_coeff.append(cc)
+        #     ineq_const.append(0)
+
+        # main equations (per calories/protein/etc.)
+        for idx2, (cparam, cval) in enumerate(self.values.items()):
+            cc = np.zeros(len(self.ingredients) + len(self.values))
+            for idx, (cname, cingredient) in enumerate(self.ingredients.items()):
+                if cparam not in cingredient:
+                    logger.warning('parameter %s not in ingredient %s' % (cparam, cname))
+                    continue
+                cc[idx] = cingredient[cparam]
+            # the free parameter for each parameters, to get the error
+            cc[len(self.ingredients) + idx2] = 1
+            eq_coeff.append(cc)
+            eq_const.append(cval)
+        # order limits (ingredient1 >= ingredient2 >= ...)
+        # need units of igredients to be correct
+
+        # and the minimize function - sum of the per parameter errors
+        err_eq = np.zeros(len(self.ingredients) + len(self.values))
+        for idx, cval in enumerate(self.values.values()):
+            err_eq[len(self.ingredients) + idx] = 1 / (cval + 0.0000001)
+
+        # and solve
+        res = linprog(err_eq, A_eq=eq_coeff, b_eq=eq_const)
+        logger.debug(res)
+        for idx, cingredient in enumerate(self.ingredients.keys()):
+            print('ingredient %s (%s) - amount %f' % (cingredient, self.ingredients[cingredient].get('measurement_description', 'NA'), res.x[idx]))
+        for idx, cparam in enumerate(self.values.keys()):
+            print('parameter %s error %f' % (cparam, res.x[idx + len(self.ingredients)]))
 
 
 def dialog(items, expdat=None, title=None):
