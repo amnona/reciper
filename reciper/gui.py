@@ -60,8 +60,12 @@ class AppWindow(QtWidgets.QMainWindow):
         self.w_search_ingredient = QLineEdit('pita')
         self.w_search_ingredient.returnPressed.connect(self.search)
 
-        button = QPushButton('RecipeIt')
+        button = QPushButton('RecipeIt!')
         button.clicked.connect(self.get_recipe)
+        layout.addWidget(button)
+
+        button = QPushButton('remove')
+        button.clicked.connect(self.remove)
         layout.addWidget(button)
 
         layout.addWidget(self.w_search_ingredient)
@@ -76,6 +80,12 @@ class AppWindow(QtWidgets.QMainWindow):
         main_widget.setFocus()
         self.setCentralWidget(main_widget)
         self.show()
+
+    def remove(self):
+        sitem = self.w_ingredient_list.selectedItems()
+        sitemtxt = sitem[0].text()
+        del self.ingredients[sitemtxt]
+        self.w_ingredient_list.takeItem(self.w_ingredient_list.row(sitem[0]))
 
     def search(self):
         logger.debug('search')
@@ -92,7 +102,9 @@ class AppWindow(QtWidgets.QMainWindow):
                 # print(cfood['food_name'])
                 # print(cfood['food_id'])
         slist = SListWindow(listdata=list(fooddata.keys()))
-        slist.exec_()
+        res = slist.exec_()
+        if res == 0:
+            return
         res = slist.w_list.selectedItems()
         selected_food = res[0].text()
         selected_id = fooddata[selected_food]
@@ -116,6 +128,8 @@ class AppWindow(QtWidgets.QMainWindow):
         info_list = SListWindow(info)
         res = info_list.exec_()
         print(res)
+        if res == 0:
+            return
         self.ingredients[selected_food] = serving
         self.w_ingredient_list.addItem(selected_food)
 
@@ -137,7 +151,7 @@ class AppWindow(QtWidgets.QMainWindow):
     def get_values(self, widget):
         logger.debug('values')
         keys = []
-        params = ['calories', 'carbohydrate', 'fat', 'fiber', 'sodium', 'protein', 'sugar']
+        params = ['calories', 'carbohydrate', 'fat', 'fiber', 'sodium', 'protein', 'sugar', 'saturated_fat']
         for ckey in params:
             cdict = {'type': 'string', 'label': ckey, 'default': str(self.values.get(ckey, 0))}
             keys.append(cdict)
@@ -483,8 +497,11 @@ class SListWindow(QtWidgets.QDialog):
         self.w_list = QListWidget()
         self.layout.addWidget(self.w_list)
 
-        buttonBox = QDialogButtonBox(QDialogButtonBox.Ok)
+        self.w_list.itemDoubleClicked.connect(self.accept)
+
+        buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttonBox.accepted.connect(self.accept)
+        buttonBox.rejected.connect(self.reject)
         self.layout.addWidget(buttonBox)
 
         for citem in listdata:
